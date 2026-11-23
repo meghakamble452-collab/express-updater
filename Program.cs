@@ -61,6 +61,7 @@ namespace Updater
                 {
                     f.Status("Download fail — Express dobara chalao.");
                     Thread.Sleep(2500);
+                    Close(f);
                     return;
                 }
 
@@ -75,14 +76,25 @@ namespace Updater
                 f.Progress(100, 1);
                 f.Status("Starting Express…");
                 Application.DoEvents();
-                Thread.Sleep(400);
+                Thread.Sleep(700);
 
                 Process.Start(exe);
+
+                Thread.Sleep(600);
+                Close(f);
             }
-            catch
+            catch (Exception ex)
             {
                 try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                f.Status("Update fail: " + ex.Message);
+                Thread.Sleep(2500);
+                Close(f);
             }
+        }
+
+        private static void Close(UpdateForm f)
+        {
+            try { f.BeginInvoke(new Action(() => Application.Exit())); } catch { }
         }
     }
 
@@ -197,7 +209,7 @@ namespace Updater
                     g.FillEllipse(b, x, 76, 6, 6);
             }
 
-            if (_total > 0)
+            if (_percent > 0 && _percent < 100 && _total > 0)
                 using (Font f = new Font("Segoe UI", 7.6f))
                 using (SolidBrush m = new SolidBrush(Color.FromArgb(150, 180, 212)))
                     g.DrawString((_total / 1024 / 1024) + " MB", f, m, 24, 122);
