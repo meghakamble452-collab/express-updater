@@ -14,9 +14,12 @@ namespace Updater
     {
         private const string Base = "https://expressts.co.in/api/files/";
 
+        private static string _ver = "";
+
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
+            if (args != null && args.Length > 0) _ver = args[0];
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new UpdateForm());
@@ -72,6 +75,10 @@ namespace Updater
                 if (File.Exists(exe)) File.Copy(exe, exe + ".old", true);
                 File.Copy(tmp, exe, true);
                 File.Delete(tmp);
+                if (!string.IsNullOrEmpty(_ver))
+                {
+                    try { File.WriteAllText(Path.Combine(dir, "ver.txt"), _ver); } catch { }
+                }
 
                 f.Progress(100, 1);
                 f.Status("Starting Express…");
