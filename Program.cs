@@ -19,10 +19,15 @@ namespace Updater
         [STAThread]
         private static void Main(string[] args)
         {
-            if (args != null && args.Length > 0) _ver = args[0];
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new UpdateForm());
+            bool created;
+            using (System.Threading.Mutex m = new System.Threading.Mutex(true, "ExpressUpdaterSingle", out created))
+            {
+                if (!created) return;
+                if (args != null && args.Length > 0) _ver = args[0];
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new UpdateForm());
+            }
         }
 
         internal static void DoUpdate(UpdateForm f)
@@ -31,8 +36,47 @@ namespace Updater
             string exe = Path.Combine(dir, "Express.exe");
             string tmp = Path.Combine(dir, "Express.new");
 
+            string logPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Express", "update.log");
+            try { Directory.CreateDirectory(Path.GetDirectoryName(logPath)); } catch { }
+            void L(string s) { try { File.AppendAllText(logPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + s + "\r\n"); } catch { } }
+
+            L("--- update start  ver=" + _ver + "  dir=" + dir);
+
             try
             {
+                f.Status("Connecting to update server…");
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Headers.Add("User-Agent", "ExpressUpdater");
+                    wc.DownloadProgressChanged += (s, e) => f.Progress(e.ProgressPercentage, e.TotalBytesToReceive);
+                    wc.DownloadFileAsync(new Uri(Base + "Express.exe"), tmp);
+                    while (wc.IsBusy) { Application.DoEvents(); Thread.Sleep(20); }
+                }
+
+                if (!File.Exists(tmp)) { Fail(f, "Download fail — file nahi mili.", L); return; }
+
+                long len = new FileInfo(tmp).Length;
+                bool isPe = false;
+                using (FileStream fs = File.OpenRead(tmp))
+                {
+                    int a = fs.ReadByte(); int b = fs.ReadByte();
+                    isPe = (a == 'M' && b == 'Z');
+                }
+                L("downloaded bytes=" + len + " pe=" + isPe);
+
+                if (len < 100000 || !isPe)
+                {
+                    try { File.Delete(tmp); } catch { }
+                    Fail(f, "Download fail — server ne galat file bheji.", L);
+                    return;
+                }
+
+                f.Status("Installing update…");
+                Application.DoEvents();
+
                 for (int i = 0; i < 60; i++)
                 {
                     if (Process.GetProcessesByName("Express").Length == 0) break;
@@ -44,40 +88,19 @@ namespace Updater
                 }
                 Thread.Sleep(800);
 
-                f.Status("Connecting to update server…");
-
-                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-                using (WebClient wc = new WebClient())
+                if (File.Exists(exe))
                 {
-                    wc.Headers.Add("User-Agent", "ExpressUpdater");
-                    wc.DownloadProgressChanged += (s, e) => f.Progress(e.ProgressPercentage, e.TotalBytesToReceive);
-                    wc.DownloadFileAsync(new Uri(Base + "Express.exe"), tmp);
-
-                    while (wc.IsBusy)
-                    {
-                        Application.DoEvents();
-                        Thread.Sleep(20);
-                    }
+                    try { File.Copy(exe, exe + ".old", true); }
+                    catch (Exception ex) { L("backup warn: " + ex.Message); }
                 }
-
-                if (!File.Exists(tmp) || new FileInfo(tmp).Length < 100000)
-                {
-                    f.Status("Download fail — Express dobara chalao.");
-                    Thread.Sleep(2500);
-                    Close(f);
-                    return;
-                }
-
-                f.Status("Installing update…");
-                Application.DoEvents();
-                Thread.Sleep(300);
-
-                if (File.Exists(exe)) File.Copy(exe, exe + ".old", true);
                 File.Copy(tmp, exe, true);
-                File.Delete(tmp);
+                try { File.Delete(tmp); } catch { }
+                L("installed ok");
+
                 if (!string.IsNullOrEmpty(_ver))
                 {
-                    try { File.WriteAllText(Path.Combine(dir, "ver.txt"), _ver); } catch { }
+                    try { File.WriteAllText(Path.Combine(dir, "ver.txt"), _ver); }
+                    catch (Exception ex) { L("ver.txt warn: " + ex.Message); }
                 }
 
                 f.Progress(100, 1);
@@ -85,18 +108,26 @@ namespace Updater
                 Application.DoEvents();
                 Thread.Sleep(700);
 
-                Process.Start(exe);
+                try { Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = dir }); }
+                catch (Exception ex) { L("start err: " + ex.Message); }
 
                 Thread.Sleep(600);
                 Close(f);
             }
             catch (Exception ex)
             {
+                L("ERR: " + ex);
                 try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
-                f.Status("Update fail: " + ex.Message);
-                Thread.Sleep(2500);
-                Close(f);
+                Fail(f, "Update fail: " + ex.Message, L);
             }
+        }
+
+        private static void Fail(UpdateForm f, string msg, Action<string> L)
+        {
+            L("FAIL: " + msg);
+            f.Status(msg);
+            Thread.Sleep(2500);
+            Close(f);
         }
 
         private static void Close(UpdateForm f)
