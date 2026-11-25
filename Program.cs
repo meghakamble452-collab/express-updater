@@ -19,9 +19,6 @@ namespace Updater
         [STAThread]
         private static void Main(string[] args)
         {
-            bool silent = false;
-            foreach (string a in args)
-                if (a.ToLower() == "-silent") silent = true;
             if (args != null && args.Length > 0) _ver = args[0];
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
