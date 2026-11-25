@@ -14,7 +14,7 @@ namespace Updater
     {
         private const string Base = "https://expressts.co.in/api/files/";
 
-        private static string _ver = "";
+        private static string _ver ="";
 
         [STAThread]
         private static void Main(string[] args)
